@@ -18,7 +18,6 @@ internal static class CliCommandCatalog
             ["mouse_control"] = "mouse",
             ["screenshot_control"] = "screenshot",
             ["clipboard"] = "clipboard",
-            ["ui_macro"] = "macro",
             ["file_save"] = "file-save",
             ["file_open"] = "file-open",
             ["ui_snapshot"] = "ui snapshot",
@@ -31,5 +30,6 @@ internal static class CliCommandCatalog
             ["ui_wait"] = "ui wait",
             ["ui_batch"] = "ui batch",
             ["process"] = "process",
+            ["winapp_ui"] = "winapp-ui",
         };
 }

@@ -1,7 +1,7 @@
 using Sbroenne.WindowsMcp.Automation.Tools;
 using Sbroenne.WindowsMcp.Clipboard.Tools;
-using Sbroenne.WindowsMcp.Macros.Tools;
 using Sbroenne.WindowsMcp.Models;
+using Sbroenne.WindowsMcp.Native.Tools;
 using Sbroenne.WindowsMcp.Processes.Tools;
 using Sbroenne.WindowsMcp.Tools;
 
@@ -20,6 +20,17 @@ internal static class CommandDispatcher
 
     public static async Task<int> DispatchAsync(ParsedArgs args, CancellationToken ct)
     {
+        if (args.Has("help"))
+        {
+            var help = HelpText.ForCommand(args.Group);
+            if (help is null)
+            {
+                return Emit.Usage($"unknown command '{args.Group}'.");
+            }
+
+            return Emit.Text(help);
+        }
+
         var optionError = ValidateNonUiOptions(args);
         if (optionError is not null)
         {
@@ -43,9 +54,6 @@ internal static class CommandDispatcher
             case "clipboard":
             case "clip":
                 return await ClipboardAsync(args, ct);
-            case "macro":
-            case "ui-macro":
-                return await MacroAsync(args, ct);
             case "file-save":
             case "filesave":
             case "save":
@@ -57,6 +65,9 @@ internal static class CommandDispatcher
             case "process":
             case "proc":
                 return await ProcessAsync(args, ct);
+            case "winapp-ui":
+            case "native-ui":
+                return await WinAppUiAsync(args, ct);
             default:
                 return Emit.Usage($"unknown command '{args.Group}'.");
         }
@@ -73,11 +84,11 @@ internal static class CommandDispatcher
             "keyboard" => $"{WindowOptions} text key modifiers repeat sequence inter-key-delay-ms delay-ms delay clear-first clear",
             "mouse" => $"{WindowOptions} target x y end-x endx end-y endy direction amount modifiers button monitor-index monitor expected-window-title expected-title expected-process-name expected-process points",
             "screenshot" => $"{WindowOptions} action no-annotate annotate target monitor-index monitor region-x region-y region-width region-height include-cursor cursor image-format format quality output-mode output-path out include-image",
-            "file-save" or "filesave" or "save" => $"{WindowOptions} path file-path file {Diagnostics}",
+            "file-save" or "filesave" or "save" => $"{WindowOptions} path file-path file trigger-mode {Diagnostics}",
             "file-open" or "fileopen" or "open" => $"{WindowOptions} path file-path file {Diagnostics} trigger-mode trigger timeout-ms timeout",
             "process" or "proc" => "name pid sort-by sort limit force",
+            "winapp-ui" or "native-ui" => "app window handle selector value property timeout-ms timeout depth max-results max gone contains interactive hide-disabled hide-offscreen output-path out capture-screen focus include-diagnostics diagnostics",
             "clipboard" or "clip" => "text",
-            "macro" or "ui-macro" => $"{WindowOptions} steps steps-file name continue-on-error no-stop-on-error stop-on-error with-snapshot snapshot snapshot-mode {Diagnostics} since",
             _ => null,
         };
         if (options is null)
@@ -225,6 +236,7 @@ internal static class CommandDispatcher
             Window(a) ?? string.Empty,
             a.GetString("path", "file-path", "file"),
             a.GetFlag("include-diagnostics", "diagnostics"),
+            a.GetString("trigger-mode") ?? "shortcut",
             ct);
         return Emit.Result(result);
     }
@@ -268,6 +280,37 @@ internal static class CommandDispatcher
         return Emit.Result(result);
     }
 
+    private static async Task<int> WinAppUiAsync(ParsedArgs a, CancellationToken ct)
+    {
+        if (!EnumHelper.TryParse<WinAppUiAction>(a.Action, out var action))
+        {
+            return Emit.Usage(
+                $"winapp-ui requires a valid action. One of: {string.Join(", ", EnumHelper.Tokens<WinAppUiAction>())}.");
+        }
+
+        var result = await WinAppUiTool.ExecuteAsync(
+            action,
+            a.GetString("app"),
+            Window(a),
+            a.GetString("selector"),
+            a.GetString("value"),
+            a.GetString("property"),
+            a.GetInt("timeout-ms", "timeout") ?? 5000,
+            a.GetInt("depth") ?? 4,
+            a.GetInt("max-results", "max") ?? 50,
+            a.GetFlag("gone"),
+            a.GetFlag("contains"),
+            a.GetFlag("interactive"),
+            a.GetFlag("hide-disabled"),
+            a.GetFlag("hide-offscreen"),
+            a.GetString("output-path", "out"),
+            a.GetFlag("capture-screen"),
+            a.GetFlag("focus"),
+            a.GetFlag("include-diagnostics", "diagnostics"),
+            ct);
+        return Emit.Result(result);
+    }
+
     private static async Task<int> ClipboardAsync(ParsedArgs a, CancellationToken ct)
     {
         if (!EnumHelper.TryParse<ClipboardAction>(a.Action, out var action))
@@ -280,39 +323,6 @@ internal static class CommandDispatcher
             action,
             a.GetString("text"),
             ct);
-        return Emit.Result(result);
-    }
-
-    private static async Task<int> MacroAsync(ParsedArgs a, CancellationToken ct)
-    {
-        if (!EnumHelper.TryParse<MacroAction>(a.Action, out var action))
-        {
-            return Emit.Usage(
-                $"macro requires a valid action. One of: {string.Join(", ", EnumHelper.Tokens<MacroAction>())}.");
-        }
-
-        var steps = a.GetString("steps");
-        var stepsFile = a.GetString("steps-file");
-        if (steps is null && stepsFile is not null && File.Exists(stepsFile))
-        {
-            steps = await File.ReadAllTextAsync(stepsFile, ct);
-        }
-
-        var stopOnError = a.Has("continue-on-error") || a.Has("no-stop-on-error")
-            ? false
-            : a.GetBool("stop-on-error", true);
-
-        var result = await UIMacroTool.ExecuteAsync(
-            action,
-            a.GetString("name"),
-            steps,
-            Window(a),
-            stopOnError,
-            a.GetFlag("with-snapshot", "snapshot"),
-            a.GetString("snapshot-mode") ?? "full",
-            a.GetFlag("include-diagnostics", "diagnostics"),
-            ct,
-            a.GetString("since"));
         return Emit.Result(result);
     }
 
